@@ -1,0 +1,41 @@
+#!/bin/bash
+set -euxo pipefail
+
+# Install the runtime tools needed to pull and run the backend container.
+dnf update -y
+dnf install -y docker awscli
+systemctl enable docker
+systemctl start docker
+usermod -aG docker ec2-user
+
+REGION="${aws_region}"
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text --region "$REGION")
+IMAGE_URI=$(aws ssm get-parameter --name "${backend_image_parameter}" --query 'Parameter.Value' --output text --region "$REGION")
+MONGO_URI=$(aws ssm get-parameter --name "${mongodb_uri_parameter}" --with-decryption --query 'Parameter.Value' --output text --region "$REGION")
+JWT_SECRET=$(aws ssm get-parameter --name "${jwt_secret_parameter}" --with-decryption --query 'Parameter.Value' --output text --region "$REGION")
+
+aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$${ACCOUNT_ID}.dkr.ecr.${aws_region}.amazonaws.com"
+docker pull "$IMAGE_URI"
+
+# Replace any previous container so new instances come up cleanly.
+docker rm -f starttech-api || true
+
+docker run -d \
+  --name starttech-api \
+  --restart unless-stopped \
+  -p ${app_port}:${app_port} \
+  --log-driver awslogs \
+  --log-opt awslogs-region=${aws_region} \
+  --log-opt awslogs-group=${cloudwatch_log_group} \
+  --log-opt awslogs-stream=$(hostname) \
+  -e PORT="${app_port}" \
+  -e MONGO_URI="$MONGO_URI" \
+  -e DB_NAME="${mongodb_database_name}" \
+  -e ENABLE_CACHE=true \
+  -e REDIS_ADDR="${redis_host}:${redis_port}" \
+  -e LOG_LEVEL=INFO \
+  -e LOG_FORMAT=json \
+  -e ALLOWED_ORIGINS="https://${frontend_origin_domain}" \
+  -e SECURE_COOKIE=true \
+  -e JWT_SECRET_KEY="$JWT_SECRET" \
+  "$IMAGE_URI"

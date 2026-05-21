@@ -1,0 +1,14 @@
+aws_region                 = "us-east-1"
+environment                = "prod"
+project_name               = "starttech"
+frontend_bucket_name       = "starttech-prod-frontend-example"
+mongodb_uri_parameter_name = "/starttech/prod/mongodb-uri"
+jwt_secret_parameter_name  = "/starttech/prod/jwt-secret"
+mongodb_database_name      = "muchtodo"
+alarm_topic_arn            = "arn:aws:sns:us-east-1:123456789012:starttech-alerts"
+ssh_allowed_cidr_blocks    = ["203.0.113.10/32"]
+redis_allowed_cidr_blocks  = []
+backend_instance_type      = "t3.micro"
+backend_min_size           = 2
+backend_max_size           = 4
+backend_desired_capacity   = 2
