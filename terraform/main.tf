@@ -28,8 +28,6 @@ terraform {
 #==========PROVIDERS===========
 provider "aws" {
   region                   = var.aws_region
-  profile                  = "krist"
-  shared_credentials_files = ["~/.aws/credentials"]
 
   default_tags {
     tags = {
