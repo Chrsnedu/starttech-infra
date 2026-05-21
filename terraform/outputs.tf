@@ -36,3 +36,7 @@ output "frontend_website_url" {
 output "redis_endpoint" {
   value = module.storage.redis_endpoint
 }
+
+output "backend_log_group_name" {
+  value = module.monitoring.backend_log_group_name
+}

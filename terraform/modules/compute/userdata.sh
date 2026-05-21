@@ -31,6 +31,14 @@ systemctl start docker
 dnf install -y aws-cli
 
 # =========================================
+# ENSURE SSM AGENT IS AVAILABLE
+# =========================================
+
+dnf install -y amazon-ssm-agent
+systemctl enable amazon-ssm-agent
+systemctl restart amazon-ssm-agent
+
+# =========================================
 # CLEAN OLD DOCKER RESOURCES
 # =========================================
 

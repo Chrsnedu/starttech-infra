@@ -1,0 +1,24 @@
+{
+  "alarms": [
+    {
+      "name": "prod-backend-unhealthy-hosts",
+      "namespace": "AWS/ApplicationELB",
+      "metricName": "UnHealthyHostCount",
+      "comparisonOperator": "GreaterThanThreshold",
+      "threshold": 0,
+      "evaluationPeriods": 2,
+      "period": 60,
+      "statistic": "Average"
+    },
+    {
+      "name": "prod-backend-high-cpu",
+      "namespace": "AWS/EC2",
+      "metricName": "CPUUtilization",
+      "comparisonOperator": "GreaterThanThreshold",
+      "threshold": 80,
+      "evaluationPeriods": 3,
+      "period": 300,
+      "statistic": "Average"
+    }
+  ]
+}

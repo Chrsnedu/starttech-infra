@@ -13,13 +13,9 @@ data "aws_ami" "amazon_linux" {
   }
 }
 
-# -----------------------------
-# CLOUDWATCH LOG GROUP
-# -----------------------------
-
-resource "aws_cloudwatch_log_group" "backend" {
-  name              = "/starttech/backend"
-  retention_in_days = 14
+locals {
+  backend_user_data      = file("${path.module}/userdata.sh")
+  backend_user_data_hash = sha256(local.backend_user_data)
 }
 
 # -----------------------------
@@ -168,9 +164,10 @@ resource "aws_lb_listener" "http" {
 # -----------------------------
 
 resource "aws_launch_template" "backend" {
-  name_prefix   = "${var.environment}-backend"
-  image_id      = data.aws_ami.amazon_linux.id
-  instance_type = "t3.micro"
+  name_prefix            = "${var.environment}-backend"
+  image_id               = data.aws_ami.amazon_linux.id
+  instance_type          = "t3.micro"
+  update_default_version = true
 
   iam_instance_profile {
     name = aws_iam_instance_profile.backend.name
@@ -191,7 +188,7 @@ resource "aws_launch_template" "backend" {
     }
   }
 
-  user_data = base64encode(file("${path.module}/userdata.sh"))
+  user_data = base64encode(local.backend_user_data)
 
   monitoring {
     enabled = true
@@ -201,7 +198,8 @@ resource "aws_launch_template" "backend" {
     resource_type = "instance"
 
     tags = {
-      Name = "${var.environment}-backend-instance"
+      Name         = "${var.environment}-backend-instance"
+      UserDataHash = substr(local.backend_user_data_hash, 0, 12)
     }
   }
 }
@@ -236,14 +234,21 @@ resource "aws_autoscaling_group" "backend" {
 
     preferences {
       min_healthy_percentage = 50
+      instance_warmup        = 120
     }
 
-    triggers = ["launch_template"]
+    triggers = ["launch_template", "tag"]
   }
 
   tag {
     key                 = "Name"
     value               = "${var.environment}-backend"
+    propagate_at_launch = true
+  }
+
+  tag {
+    key                 = "UserDataHash"
+    value               = substr(local.backend_user_data_hash, 0, 12)
     propagate_at_launch = true
   }
 }

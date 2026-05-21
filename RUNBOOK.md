@@ -14,7 +14,8 @@ TF_STATE_BUCKET=... TF_LOCK_TABLE=... ./scripts/deploy-infrastructure.sh
 
 - Confirm the ALB target group reports healthy instances.
 - Review `/aws/ec2/starttech-prod/backend` in CloudWatch Logs.
-- Hit the backend `/health` endpoint through the ALB DNS name.
+- Hit the backend `/ping` endpoint through the ALB DNS name to confirm target health.
+- Hit the backend `/health` endpoint through the ALB DNS name to confirm MongoDB and Redis status.
 
 ### Investigate Redis Issues
 
@@ -31,4 +32,4 @@ TF_STATE_BUCKET=... TF_LOCK_TABLE=... ./scripts/deploy-infrastructure.sh
 
 - `terraform init` fails: verify the state bucket, lock table, and AWS role secrets are present.
 - EC2 instances never become healthy: confirm the instance role can read SSM, pull from ECR, and write to CloudWatch logs.
-- Frontend returns 403 through CloudFront: verify the bucket policy still trusts the distribution ARN and that the uploaded build contains `index.html`.
+- Frontend returns 403 or stale assets from the S3 website: verify the public bucket policy is still applied and that the uploaded build contains `index.html`.

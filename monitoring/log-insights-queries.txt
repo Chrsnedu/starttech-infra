@@ -1,0 +1,13 @@
+fields @timestamp, @message
+| sort @timestamp desc
+| limit 50
+
+fields @timestamp, @message
+| filter @message like /ERROR|error|panic/
+| sort @timestamp desc
+| limit 50
+
+fields @timestamp, @message
+| filter @message like /health|Health/
+| sort @timestamp desc
+| limit 50
