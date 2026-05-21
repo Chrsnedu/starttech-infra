@@ -6,8 +6,8 @@ set -e
 # =========================================
 
 REGION="us-east-1"
-ACCOUNT_ID="093796422475"
-REPOSITORY="dev-starttech-backend"
+ACCOUNT_ID="327082974817"
+REPOSITORY="prod-starttech-backend"
 
 # =========================================
 # SYSTEM UPDATE
@@ -41,27 +41,27 @@ docker system prune -af || true
 # =========================================
 
 MONGO_URI=$(aws ssm get-parameter \
-  --name "/starttech/dev/mongo_uri" \
+  --name "/starttech/prod/mongo_uri" \
   --with-decryption \
   --query "Parameter.Value" \
   --output text \
   --region $REGION)
 
 JWT_SECRET_KEY=$(aws ssm get-parameter \
-  --name "/starttech/dev/jwt_secret" \
+  --name "/starttech/prod/jwt_secret" \
   --with-decryption \
   --query "Parameter.Value" \
   --output text \
   --region $REGION)
 
 DB_NAME=$(aws ssm get-parameter \
-  --name "/starttech/dev/db_name" \
+  --name "/starttech/prod/db_name" \
   --query "Parameter.Value" \
   --output text \
   --region $REGION)
 
 REDIS_HOST=$(aws ssm get-parameter \
-  --name "/starttech/dev/redis_host" \
+  --name "/starttech/prod/redis_host" \
   --query "Parameter.Value" \
   --output text \
   --region $REGION)
