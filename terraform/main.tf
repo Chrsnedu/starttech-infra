@@ -50,33 +50,33 @@ module "networking" {
 }
 
 
-# #===========COMPUTE MODULE===========
-# module "compute" {
-#   source = "./modules/compute"
+#===========COMPUTE MODULE===========
+module "compute" {
+  source = "./modules/compute"
 
-#   environment            = var.environment
-#   vpc_id                 = module.networking.vpc_id
-#   public_subnets         = module.networking.public_subnets
-#   private_subnets        = module.networking.private_subnets
-#   alb_security_group     = module.security.alb_security_group
-#   backend_security_group = module.security.backend_security_group
-# }
+  environment            = var.environment
+  vpc_id                 = module.networking.vpc_id
+  public_subnets         = module.networking.public_subnets
+  private_subnets        = module.networking.private_subnets
+  alb_security_group     = module.security.alb_security_group
+  backend_security_group = module.security.backend_security_group
+}
 
-# #===========Storage MODULE===========
-# module "storage" {
-#   source = "./modules/storage"
+#===========Storage MODULE===========
+module "storage" {
+  source = "./modules/storage"
 
-#   environment          = var.environment
-#   vpc_id               = module.networking.vpc_id
-#   public_subnets       = module.networking.public_subnets
-#   private_subnets      = module.networking.private_subnets
-#   redis_security_group = module.security.redis_security_group
-# }
+  environment          = var.environment
+  vpc_id               = module.networking.vpc_id
+  public_subnets       = module.networking.public_subnets
+  private_subnets      = module.networking.private_subnets
+  redis_security_group = module.security.redis_security_group
+}
 
-# #============Security Group============
-# module "security" {
-#   source = "./modules/security"
+#============Security Group============
+module "security" {
+  source = "./modules/security"
 
-#   environment = var.environment
-#   vpc_id      = module.networking.vpc_id
-# }
+  environment = var.environment
+  vpc_id      = module.networking.vpc_id
+}
