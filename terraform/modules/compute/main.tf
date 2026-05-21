@@ -1,278 +1,266 @@
+# -----------------------------
+# DATA SOURCES
+# -----------------------------
+
 data "aws_ami" "amazon_linux" {
   most_recent = true
-  owners      = ["amazon"]
+
+  owners = ["amazon"]
 
   filter {
     name   = "name"
-    values = ["al2023-ami-2023*-x86_64"]
+    values = ["al2023-ami-*-x86_64"]
   }
 }
 
-data "aws_iam_policy_document" "ec2_assume_role" {
-  statement {
-    actions = ["sts:AssumeRole"]
+# -----------------------------
+# CLOUDWATCH LOG GROUP
+# -----------------------------
 
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
-    }
-  }
+resource "aws_cloudwatch_log_group" "backend" {
+  name              = "/starttech/backend"
+  retention_in_days = 14
 }
 
-data "aws_iam_policy_document" "instance_access" {
-  statement {
-    sid = "CloudWatchLogs"
-    actions = [
-      "logs:CreateLogGroup",
-      "logs:CreateLogStream",
-      "logs:DescribeLogStreams",
-      "logs:PutLogEvents"
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid = "ReadDeploymentParameters"
-    actions = [
-      "ssm:GetParameter",
-      "ssm:GetParameters"
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid       = "DecryptSecureParameters"
-    actions   = ["kms:Decrypt"]
-    resources = ["*"]
-  }
-
-  statement {
-    sid = "PullImagesFromECR"
-    actions = [
-      "ecr:GetAuthorizationToken",
-      "ecr:BatchCheckLayerAvailability",
-      "ecr:GetDownloadUrlForLayer",
-      "ecr:BatchGetImage"
-    ]
-    resources = ["*"]
-  }
-}
-
-locals {
-  name_prefix             = "${var.project_name}-${var.environment}"
-  backend_image_parameter = "/${var.project_name}/${var.environment}/backend-image"
-}
-
-resource "aws_security_group" "alb" {
-  name        = "${local.name_prefix}-alb-sg"
-  description = "Allow public HTTP access to the application load balancer."
-  vpc_id      = var.vpc_id
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-resource "aws_security_group" "app" {
-  name        = "${local.name_prefix}-app-sg"
-  description = "Allow ALB traffic into backend instances."
-  vpc_id      = var.vpc_id
-
-  ingress {
-    from_port       = var.app_port
-    to_port         = var.app_port
-    protocol        = "tcp"
-    security_groups = [aws_security_group.alb.id]
-  }
-
-  dynamic "ingress" {
-    for_each = length(var.ssh_allowed_cidr_blocks) > 0 ? [1] : []
-
-    content {
-      from_port   = 22
-      to_port     = 22
-      protocol    = "tcp"
-      cidr_blocks = var.ssh_allowed_cidr_blocks
-    }
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
+# -----------------------------
+# ECR REPOSITORY
+# -----------------------------
 
 resource "aws_ecr_repository" "backend" {
-  name                 = "${local.name_prefix}-backend"
-  image_tag_mutability = "MUTABLE"
+  name = "${var.environment}-starttech-backend"
 
   image_scanning_configuration {
     scan_on_push = true
   }
+
+  force_delete = true
 }
 
-resource "aws_ssm_parameter" "backend_image" {
-  name  = local.backend_image_parameter
-  type  = "String"
-  value = "${aws_ecr_repository.backend.repository_url}:initial"
+# -----------------------------
+# IAM ROLE FOR EC2
+# -----------------------------
 
-  lifecycle {
-    ignore_changes = [value]
-  }
+resource "aws_iam_role" "ec2_role" {
+  name = "${var.environment}-starttech-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+
+        Action = "sts:AssumeRole"
+      }
+    ]
+  })
 }
 
-resource "aws_iam_role" "ec2" {
-  name               = "${local.name_prefix}-ec2-role"
-  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+# -----------------------------
+# CLOUDWATCH POLICY
+# -----------------------------
+
+resource "aws_iam_role_policy_attachment" "cloudwatch" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
 }
 
-resource "aws_iam_policy" "instance_access" {
-  name   = "${local.name_prefix}-instance-access"
-  policy = data.aws_iam_policy_document.instance_access.json
+# ECR ACCESS
+
+resource "aws_iam_role_policy_attachment" "ecr" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
-resource "aws_iam_role_policy_attachment" "instance_access" {
-  role       = aws_iam_role.ec2.name
-  policy_arn = aws_iam_policy.instance_access.arn
+# SSM ACCESS
+
+resource "aws_iam_role_policy_attachment" "ssm" {
+  role       = aws_iam_role.ec2_role.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-resource "aws_iam_instance_profile" "ec2" {
-  name = "${local.name_prefix}-ec2-profile"
-  role = aws_iam_role.ec2.name
+resource "aws_iam_role_policy" "parameter_store_access" {
+  name = "${var.environment}-parameter-store-access"
+  role = aws_iam_role.ec2_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Effect = "Allow"
+
+        Action = [
+          "ssm:GetParameter",
+          "ssm:GetParameters"
+        ]
+
+        Resource = "*"
+      }
+    ]
+  })
 }
 
-resource "aws_lb" "this" {
-  name               = substr("${local.name_prefix}-alb", 0, 32)
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb.id]
-  subnets            = var.public_subnet_ids
+# -----------------------------
+# INSTANCE PROFILE
+# -----------------------------
+
+resource "aws_iam_instance_profile" "backend" {
+  name = "${var.environment}-backend-profile"
+  role = aws_iam_role.ec2_role.name
 }
 
-resource "aws_lb_target_group" "api" {
-  name        = substr("${local.name_prefix}-tg", 0, 32)
-  port        = var.app_port
-  protocol    = "HTTP"
-  target_type = "instance"
-  vpc_id      = var.vpc_id
+# -----------------------------
+# TARGET GROUP
+# -----------------------------
+
+resource "aws_lb_target_group" "backend" {
+  name     = "${var.environment}-backend-tg"
+  port     = 8080
+  protocol = "HTTP"
+  vpc_id   = var.vpc_id
 
   health_check {
-    enabled             = true
+    path                = "/health"
+    protocol            = "HTTP"
     healthy_threshold   = 2
-    unhealthy_threshold = 3
+    unhealthy_threshold = 5
     interval            = 30
-    path                = var.health_check_path
-    matcher             = "200-399"
+    timeout             = 5
+    matcher             = "200"
   }
 }
 
+# -----------------------------
+# APPLICATION LOAD BALANCER
+# -----------------------------
+
+resource "aws_lb" "backend" {
+  name               = "${var.environment}-backend-alb"
+  internal           = false
+  load_balancer_type = "application"
+
+  security_groups = [var.alb_security_group]
+  subnets         = var.public_subnets
+}
+
+# -----------------------------
+# ALB LISTENER
+# -----------------------------
+
 resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.this.arn
+  load_balancer_arn = aws_lb.backend.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.api.arn
+    target_group_arn = aws_lb_target_group.backend.arn
   }
 }
 
-resource "aws_launch_template" "api" {
-  name_prefix   = "${local.name_prefix}-lt-"
+# -----------------------------
+# LAUNCH TEMPLATE
+# -----------------------------
+
+resource "aws_launch_template" "backend" {
+  name_prefix   = "${var.environment}-backend"
   image_id      = data.aws_ami.amazon_linux.id
-  instance_type = var.instance_type
+  instance_type = "t3.micro"
 
   iam_instance_profile {
-    arn = aws_iam_instance_profile.ec2.arn
+    name = aws_iam_instance_profile.backend.name
   }
 
   network_interfaces {
-    associate_public_ip_address = false
-    security_groups             = [aws_security_group.app.id]
+    associate_public_ip_address = true
+    security_groups             = [var.backend_security_group]
   }
 
-  user_data = base64encode(templatefile("${path.module}/user-data.sh.tftpl", {
-    aws_region              = var.aws_region
-    app_port                = var.app_port
-    backend_image_parameter = local.backend_image_parameter
-    cloudwatch_log_group    = var.cloudwatch_log_group_name
-    mongodb_uri_parameter   = var.mongodb_uri_parameter_name
-    jwt_secret_parameter    = var.jwt_secret_parameter_name
-    mongodb_database_name   = var.mongodb_database_name
-    redis_host              = var.redis_host
-    redis_port              = var.redis_port
-    frontend_origin_domain  = var.frontend_origin_domain
-  }))
+  block_device_mappings {
+    device_name = "/dev/xvda"
+
+    ebs {
+      volume_size           = 20
+      volume_type           = "gp3"
+      delete_on_termination = true
+    }
+  }
+
+  user_data = base64encode(file("${path.module}/userdata.sh"))
+
+  monitoring {
+    enabled = true
+  }
 
   tag_specifications {
     resource_type = "instance"
 
     tags = {
-      Name = "${local.name_prefix}-backend"
+      Name = "${var.environment}-backend-instance"
     }
   }
 }
 
-resource "aws_autoscaling_group" "api" {
-  name                      = "${local.name_prefix}-asg"
-  vpc_zone_identifier       = var.private_subnet_ids
-  desired_capacity          = var.desired_capacity
-  min_size                  = var.min_size
-  max_size                  = var.max_size
-  health_check_type         = "ELB"
-  health_check_grace_period = 180
-  target_group_arns         = [aws_lb_target_group.api.arn]
+
+# -----------------------------
+# AUTO SCALING GROUP
+# -----------------------------
+
+resource "aws_autoscaling_group" "backend" {
+  name = "${var.environment}-backend-asg"
+
+  desired_capacity = 2
+  min_size         = 2
+  max_size         = 4
+
+  vpc_zone_identifier = var.private_subnets
+
+  target_group_arns = [
+    aws_lb_target_group.backend.arn
+  ]
 
   launch_template {
-    id      = aws_launch_template.api.id
+    id      = aws_launch_template.backend.id
     version = "$Latest"
   }
+
+  health_check_type = "ELB"
 
   instance_refresh {
     strategy = "Rolling"
 
     preferences {
       min_healthy_percentage = 50
-      instance_warmup        = 120
     }
+
+    triggers = ["launch_template"]
   }
 
   tag {
     key                 = "Name"
-    value               = "${local.name_prefix}-backend"
+    value               = "${var.environment}-backend"
     propagate_at_launch = true
   }
 }
+# -----------------------------
+# CPU SCALING POLICY
+# -----------------------------
 
-resource "aws_autoscaling_policy" "cpu_target" {
-  name                   = "${local.name_prefix}-cpu-scale"
+resource "aws_autoscaling_policy" "cpu" {
+  name                   = "${var.environment}-cpu-scaling"
+  autoscaling_group_name = aws_autoscaling_group.backend.name
   policy_type            = "TargetTrackingScaling"
-  autoscaling_group_name = aws_autoscaling_group.api.name
 
   target_tracking_configuration {
     predefined_metric_specification {
       predefined_metric_type = "ASGAverageCPUUtilization"
     }
 
-    target_value = 60
+    target_value = 70
   }
 }

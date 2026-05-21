@@ -1,10 +1,88 @@
-locals {
-  name_prefix = "${var.project_name}-${var.environment}"
+# -----------------------------
+# RANDOM SUFFIX
+# -----------------------------
+
+resource "random_id" "suffix" {
+  byte_length = 4
 }
 
+# -----------------------------
+# PRIVATE S3 BUCKET
+# -----------------------------
+
 resource "aws_s3_bucket" "frontend" {
-  bucket = var.frontend_bucket_name != "" ? var.frontend_bucket_name : "${local.name_prefix}-frontend"
+  bucket = "${var.environment}-starttech-frontend-${random_id.suffix.hex}"
+
+  force_destroy = true
 }
+
+# -----------------------------
+#  S3 PUBLIC ACCESS
+# -----------------------------
+
+resource "aws_s3_bucket_public_access_block" "frontend" {
+  bucket = aws_s3_bucket.frontend.id
+
+  block_public_acls       = false
+  block_public_policy     = false
+  ignore_public_acls      = false
+  restrict_public_buckets = false
+}
+
+
+# -----------------------------
+# STATIC WEBSITE HOSTING
+# -----------------------------
+
+resource "aws_s3_bucket_website_configuration" "frontend" {
+  bucket = aws_s3_bucket.frontend.id
+
+  index_document {
+    suffix = "index.html"
+  }
+
+  error_document {
+    key = "index.html"
+  }
+}
+
+
+# -----------------------------
+# PUBLIC READ POLICY
+# -----------------------------
+
+resource "aws_s3_bucket_policy" "frontend_public" {
+  bucket = aws_s3_bucket.frontend.id
+
+  depends_on = [
+    aws_s3_bucket_public_access_block.frontend
+  ]
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+
+    Statement = [
+      {
+        Sid    = "PublicReadGetObject"
+        Effect = "Allow"
+
+        Principal = "*"
+
+        Action = [
+          "s3:GetObject"
+        ]
+
+        Resource = [
+          "${aws_s3_bucket.frontend.arn}/*"
+        ]
+      }
+    ]
+  })
+}
+
+# -----------------------------
+# ENABLE VERSIONING
+# -----------------------------
 
 resource "aws_s3_bucket_versioning" "frontend" {
   bucket = aws_s3_bucket.frontend.id
@@ -14,13 +92,9 @@ resource "aws_s3_bucket_versioning" "frontend" {
   }
 }
 
-resource "aws_s3_bucket_public_access_block" "frontend" {
-  bucket                  = aws_s3_bucket.frontend.id
-  block_public_acls       = true
-  block_public_policy     = true
-  ignore_public_acls      = true
-  restrict_public_buckets = true
-}
+# -----------------------------
+# SERVER SIDE ENCRYPTION
+# -----------------------------
 
 resource "aws_s3_bucket_server_side_encryption_configuration" "frontend" {
   bucket = aws_s3_bucket.frontend.id
@@ -32,149 +106,143 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "frontend" {
   }
 }
 
-resource "aws_s3_bucket_website_configuration" "frontend" {
-  bucket = aws_s3_bucket.frontend.id
+# -----------------------------
+# ORIGIN ACCESS CONTROL
+# -----------------------------
 
-  index_document {
-    suffix = var.frontend_index_document
-  }
+# resource "aws_cloudfront_origin_access_control" "frontend" {
+#   name                              = "${var.environment}-frontend-oac"
+#   description                       = "OAC for private frontend bucket"
+#   origin_access_control_origin_type = "s3"
 
-  error_document {
-    key = var.frontend_error_document
-  }
-}
+#   signing_behavior = "always"
+#   signing_protocol = "sigv4"
+# }
 
-resource "aws_cloudfront_origin_access_control" "frontend" {
-  name                              = "${local.name_prefix}-frontend-oac"
-  description                       = "OAC for frontend S3 origin."
-  origin_access_control_origin_type = "s3"
-  signing_behavior                  = "always"
-  signing_protocol                  = "sigv4"
-}
+# -----------------------------
+# CLOUDFRONT DISTRIBUTION
+# -----------------------------
 
-resource "aws_cloudfront_distribution" "frontend" {
-  enabled             = true
-  is_ipv6_enabled     = true
-  comment             = "StartTech frontend CDN"
-  default_root_object = var.frontend_index_document
-  price_class         = var.cloudfront_price_class
+# resource "aws_cloudfront_distribution" "frontend" {
+#   enabled             = true
+#   default_root_object = "index.html"
 
-  origin {
-    domain_name              = aws_s3_bucket.frontend.bucket_regional_domain_name
-    origin_id                = "frontend-s3"
-    origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
-  }
+#   origin {
+#     domain_name = aws_s3_bucket.frontend.bucket_regional_domain_name
+#     origin_id   = "frontendS3"
 
-  default_cache_behavior {
-    allowed_methods  = ["GET", "HEAD", "OPTIONS"]
-    cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "frontend-s3"
+#     origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
+#   }
 
-    forwarded_values {
-      query_string = false
+#   default_cache_behavior {
+#     target_origin_id       = "frontendS3"
+#     viewer_protocol_policy = "redirect-to-https"
 
-      cookies {
-        forward = "none"
-      }
-    }
+#     allowed_methods = [
+#       "GET",
+#       "HEAD",
+#       "OPTIONS"
+#     ]
 
-    viewer_protocol_policy = "redirect-to-https"
-  }
+#     cached_methods = [
+#       "GET",
+#       "HEAD"
+#     ]
 
-  custom_error_response {
-    error_code            = 403
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
-  }
+#     forwarded_values {
+#       query_string = false
 
-  custom_error_response {
-    error_code            = 404
-    response_code         = 200
-    response_page_path    = "/index.html"
-    error_caching_min_ttl = 0
-  }
+#       cookies {
+#         forward = "none"
+#       }
+#     }
+#   }
 
-  restrictions {
-    geo_restriction {
-      restriction_type = "none"
-    }
-  }
+#   restrictions {
+#     geo_restriction {
+#       restriction_type = "none"
+#     }
+#   }
 
-  viewer_certificate {
-    cloudfront_default_certificate = true
-  }
-}
+#   custom_error_response {
+#     error_code            = 403
+#     response_code         = 200
+#     response_page_path    = "/index.html"
+#     error_caching_min_ttl = 10
+#   }
 
-data "aws_iam_policy_document" "frontend_bucket" {
-  statement {
-    actions   = ["s3:GetObject"]
-    resources = ["${aws_s3_bucket.frontend.arn}/*"]
+#   custom_error_response {
+#     error_code            = 404
+#     response_code         = 200
+#     response_page_path    = "/index.html"
+#     error_caching_min_ttl = 10
+#   }
 
-    principals {
-      type        = "Service"
-      identifiers = ["cloudfront.amazonaws.com"]
-    }
+#   viewer_certificate {
+#     cloudfront_default_certificate = true
+#   }
+# }
 
-    condition {
-      test     = "StringEquals"
-      variable = "AWS:SourceArn"
-      values   = [aws_cloudfront_distribution.frontend.arn]
-    }
-  }
-}
+# -----------------------------
+# S3 BUCKET POLICY FOR CLOUDFRONT
+# -----------------------------
 
-resource "aws_s3_bucket_policy" "frontend" {
-  bucket = aws_s3_bucket.frontend.id
-  policy = data.aws_iam_policy_document.frontend_bucket.json
-}
+# resource "aws_s3_bucket_policy" "frontend" {
+#   bucket = aws_s3_bucket.frontend.id
 
-resource "aws_security_group" "redis" {
-  name        = "${local.name_prefix}-redis-sg"
-  description = "Allow backend instances to connect to Redis."
-  vpc_id      = var.vpc_id
+#   policy = jsonencode({
+#     Version = "2012-10-17"
 
-  ingress {
-    from_port   = 6379
-    to_port     = 6379
-    protocol    = "tcp"
-    cidr_blocks = [var.vpc_cidr]
-  }
+#     Statement = [
+#       {
+#         Sid    = "AllowCloudFrontServicePrincipalReadOnly"
+#         Effect = "Allow"
 
-  dynamic "ingress" {
-    for_each = length(var.redis_allowed_cidr_blocks) > 0 ? [1] : []
+#         Principal = {
+#           Service = "cloudfront.amazonaws.com"
+#         }
 
-    content {
-      from_port   = 6379
-      to_port     = 6379
-      protocol    = "tcp"
-      cidr_blocks = var.redis_allowed_cidr_blocks
-    }
-  }
+#         Action = [
+#           "s3:GetObject"
+#         ]
 
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
+#         Resource = [
+#           "${aws_s3_bucket.frontend.arn}/*"
+#         ]
+
+#         Condition = {
+#           StringEquals = {
+#             "AWS:SourceArn" = aws_cloudfront_distribution.frontend.arn
+#           }
+#         }
+#       }
+#     ]
+#   })
+# }
+
+# -----------------------------
+# ELASTICACHE SUBNET GROUP
+# -----------------------------
 
 resource "aws_elasticache_subnet_group" "redis" {
-  name       = "${local.name_prefix}-redis-subnets"
-  subnet_ids = var.private_subnet_ids
+  name = "${var.environment}-redis-subnet-group"
+
+  subnet_ids = var.private_subnets
 }
 
-resource "aws_elasticache_replication_group" "redis" {
-  replication_group_id       = "${var.project_name}-${var.environment}-redis"
-  description                = "Redis cache for StartTech."
-  engine                     = "redis"
-  engine_version             = var.redis_engine_version
-  node_type                  = var.redis_node_type
-  num_cache_clusters         = var.redis_num_cache_clusters
-  parameter_group_name       = "default.redis7"
-  port                       = 6379
-  subnet_group_name          = aws_elasticache_subnet_group.redis.name
-  security_group_ids         = [aws_security_group.redis.id]
-  automatic_failover_enabled = var.redis_num_cache_clusters > 1
+# -----------------------------
+# REDIS CLUSTER
+# -----------------------------
+
+resource "aws_elasticache_cluster" "redis" {
+  cluster_id           = "${var.environment}-redis"
+  engine               = "redis"
+  node_type            = "cache.t3.micro"
+  num_cache_nodes      = 1
+  parameter_group_name = "default.redis7"
+
+  port = 6379
+
+  subnet_group_name  = aws_elasticache_subnet_group.redis.name
+  security_group_ids = [var.redis_security_group]
 }
