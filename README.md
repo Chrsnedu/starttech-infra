@@ -1,31 +1,68 @@
 # StartTech Infrastructure
 
-This repository provisions the AWS foundation for the StartTech assessment using Terraform and deploys it through GitHub Actions. The stack includes a VPC, public and private subnets, an internet gateway, NAT, an Application Load Balancer, an Auto Scaling Group for the Go API, an ECR repository, an S3 website bucket for the React build, ElastiCache Redis, and CloudWatch logs and alarms.
+This repository provisions the production AWS infrastructure for the StartTech application.
 
-## Layout
+The intended target account is:
 
-- `terraform/`: root Terraform configuration and reusable modules.
-- `scripts/deploy-infrastructure.sh`: local helper that mirrors the CI pipeline.
-- `monitoring/`: dashboard, alarm, and Logs Insights reference assets.
+- AWS account: `327082974817`
+- region: `us-east-1`
 
-## Required GitHub Secrets And Variables
+## Repository Layout
 
-- `AWS_GITHUB_ROLE_ARN`: IAM role assumed by GitHub Actions via OIDC.
-- `TF_STATE_BUCKET`: S3 bucket that stores Terraform state.
-- `TF_LOCK_TABLE`: DynamoDB table for state locking.
-- `vars.AWS_REGION`: optional region override.
-- `vars.TF_STATE_KEY`: optional Terraform state key.
+- `terraform/`: root configuration and reusable modules
+- `scripts/`: local helper scripts
+- `monitoring/`: dashboards, alarms, and log query references
+- `.github/workflows/`: infrastructure CI/CD
 
-## Manual Setup
+## What This Stack Creates
 
-1. Create the remote Terraform state bucket and lock table.
-2. Create an IAM role for GitHub OIDC and allow it to manage the resources in this stack.
-3. Store the MongoDB Atlas connection string in SSM Parameter Store at `/starttech/prod/mongo_uri`.
-4. Store the JWT secret at `/starttech/prod/jwt_secret`, the database name at `/starttech/prod/db_name`, and the Redis hostname at `/starttech/prod/redis_host`.
-5. Run `scripts/deploy-infrastructure.sh` locally or push to `main` to let GitHub Actions apply the stack.
+- VPC with public and private subnets
+- Internet gateway and NAT gateway
+- Internet-facing Application Load Balancer
+- EC2 Auto Scaling Group for the backend
+- ECR repository for backend images
+- S3 website bucket for frontend hosting
+- ElastiCache Redis
+- CloudWatch log group and monitoring resources
 
-## Deployment Flow
+## Key Terraform Outputs
 
-1. Pull requests run `terraform fmt`, `tfsec`, `validate`, and `plan`.
-2. Pushes to `main` run the same checks and then apply the saved plan.
-3. The application repository uses the resulting bucket, frontend website URL, ECR repository, Redis endpoint, and Auto Scaling Group for deployments.
+- `alb_dns_name`
+- `frontend_bucket_name`
+- `frontend_website_url`
+- `ecr_repository_url`
+- `redis_endpoint`
+- `backend_log_group_name`
+
+## Required SSM Parameters
+
+The compute layer expects these production parameters:
+
+- `/starttech/prod/mongo_uri`
+- `/starttech/prod/jwt_secret`
+- `/starttech/prod/db_name`
+- `/starttech/prod/redis_host`
+
+## Remote State
+
+Terraform state is stored remotely in S3 with DynamoDB locking.
+
+## Usage
+
+Before running Terraform locally, make sure the active AWS identity is the production account:
+
+```bash
+export AWS_PROFILE="krist"
+aws sts get-caller-identity
+```
+
+The returned account should be `327082974817`.
+
+Then run:
+
+```bash
+cd terraform
+terraform init
+terraform plan
+terraform apply
+```
