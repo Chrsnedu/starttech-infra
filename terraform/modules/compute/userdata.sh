@@ -8,6 +8,7 @@ set -e
 REGION="us-east-1"
 ACCOUNT_ID="327082974817"
 REPOSITORY="prod-starttech-backend"
+ALLOWED_ORIGINS="http://localhost:5173,http://prod-starttech-frontend-d1581ec0.s3-website-us-east-1.amazonaws.com"
 
 # =========================================
 # SYSTEM UPDATE
@@ -112,7 +113,7 @@ docker run -d \
   -e JWT_SECRET_KEY="$JWT_SECRET_KEY" \
   -e ENABLE_CACHE=true \
   -e REDIS_ADDR="$REDIS_HOST:6379" \
-  -e ALLOWED_ORIGINS="http://localhost:5173" \
+  -e ALLOWED_ORIGINS="$ALLOWED_ORIGINS" \
   $ACCOUNT_ID.dkr.ecr.$REGION.amazonaws.com/$REPOSITORY:latest
 
 # =========================================
